@@ -1,7 +1,7 @@
-_addon.author = 'Ivaar'
+_addon.author = 'Ivaar', 'PBW' ,'Aragan' --ADD CCSV AUTO BY 'Aragan'
 _addon.commands = {'Singer','sing'}
 _addon.name = 'Singer'
-_addon.version = '1.20.08.18'
+_addon.version = '1.30.20.0' -- last version update by 'Aragan'
 
 require('luau')
 require('pack')
@@ -12,21 +12,26 @@ config = require('config')
 get = require('sing_get')
 cast = require('sing_cast')
 song_timers = require('song_timers')
+res = require('resources') -- مكتبة الـ abilities الرسمية
+
 
 default = {
     interval = 0.1,
-    delay=4,
-    marcato='Sentinel\'s Scherzo',
+    delay=6,
+    marcato='Honor March',
     soul_voice=false,
     clarion=false,
+    ccsv=false,
     actions=false,
     pianissimo=false,
-    nightingale=true,
-    troubadour=true,
+    nightingale=false,
+    troubadour=false,
+    nitro=false,
     debuffing=false,
-    recast={song={min=20,max=25},buff={min=5,max=10}},
-    active=true,
-    timers=true,
+    song_debuffs='',
+    recast={song={min=0,max=0},buff={min=0,max=0}},
+    active=false,
+    timers=false,
     aoe={['party']=true, ['p1'] = true,['p2'] = true,['p3'] = true,['p4'] = true,['p5'] = true},
     min_ws=20,
     max_ws=99,
@@ -35,6 +40,10 @@ default = {
 
 settings = config.load(default)
 
+
+-- Force refresh state
+_force_refresh = false
+_force_refresh_index = 1
 setting = T{
     buffs = T{
         haste = L{},
@@ -44,14 +53,18 @@ setting = T{
     },
     debuffs = L{},
     debuffs = L{"Carnage Elegy","Pining Nocturne",},
-    dummy = L{"Knight's Minne","Knight's Minne II",},
-    songs = L{"Advancing March","Victory March","Blade Madrigal","Sword Madrigal","Valor Minuet V",},
+    dummy = L{"Puppet's Operetta","Scop's Operetta","Shining Fantasia",},
+    songs = L{"Honor March","Victory March","Valor Minuet V","Valor Minuet IV",},
     song = {},
     playlist = T{
         clear = L{}
     },
 }
-
+local song_debuffs = {
+    ['Carnage Elegy'] = true,
+    ['Pining Nocturne'] = true,
+    -- ['Foe Requiem VII'] = true,
+}
 local save_file
 
 do
@@ -110,18 +123,16 @@ function colorize(row, str)
     return '\\cs(0,255,0)%s\\cr':format(str)
 end
 
-local buttons = {'active','actions','nightingale','troubadour','pianissimo','debuffing','party','p1','p2','p3','p4','p5'}
-
+local buttons = {'active','actions','nitro','ccsv','debuffing','pianissimo','party','p1','p2','p3','p4','p5'}
 local display_box = function()
     local str = colorize(1, 'Singer')
     str = str .. colorize(2, '\n Actions: [%s]':format(settings.actions and 'On' or 'Off'))
-
+   
     if not settings.active then return str end
-
-    str = str..colorize(3, '\n Nightingale:[%s]':format(settings.nightingale and 'On' or 'Off'))
-    str = str..colorize(4, '\n Troubadour:[%s]':format(settings.troubadour and 'On' or 'Off'))
-    str = str..colorize(5, '\n Pianissimo:[%s]':format(settings.pianissimo and 'On' or 'Off'))
-    str = str..colorize(6, '\n Debuffing:[%s]':format(settings.debuffing and 'On' or 'Off'))
+    str = str..colorize(3, '\n Nitro:[%s]':format(settings.nitro and 'On' or 'Off'))
+    str = str..colorize(4, '\n Ccsv:[%s]':format(settings.ccsv and 'On' or 'Off'))
+    str = str..colorize(5, '\n Debuffing:[%s]':format(settings.debuffing and 'On' or 'Off'))
+    str = str..colorize(6, '\n Pianissimo:[%s]':format(settings.pianissimo and 'On' or 'Off'))
     str = str..colorize(7, '\n AoE: [%s]':format(settings.aoe.party and 'On' or 'Off'))
 
     if settings.aoe.party then
@@ -189,7 +200,7 @@ function do_stuff()
         if is_moving or buffs.stun or buffs.sleep or buffs.charm or buffs.terror or buffs.petrification then return end
 
         local JA_WS_lock = buffs.amnesia or buffs.impairment
-
+      
         if use_ws and not JA_WS_lock and play.status == 1 then
             local targ = windower.ffxi.get_mob_by_target('t')
             local goal_tp
@@ -250,19 +261,24 @@ function do_stuff()
 
         if settings.debuffing then
             local targ = windower.ffxi.get_mob_by_target('bt')
-
+        
             if targ and targ.hpp > 0 and targ.valid_target and targ.distance:sqrt() < 20 then
                 for song in setting.debuffs:it() do
                     local effect
-                    for k,v in pairs(get.debuffs) do
+                    for k, v in pairs(get.debuffs) do
                         if table.find(v, song) then
-                            effect =  k
+                            effect = k
                             break
                         end
                     end
-
-                    if effect and (not debuffed[targ.id] or not debuffed[targ.id][effect]) and spell_recasts[get.song_by_name(song).id] == 0 then
-                        cast.MA(song,'<bt>')
+        
+                    -- التحقق مما إذا كان الهدف قد تأثر بالفعل بالتعويذة
+                    if effect and (not debuffed[targ.id] or not debuffed[targ.id][effect]) then
+                        if spell_recasts[get.song_by_name(song).id] == 0 then
+                            cast.MA(song, '<bt>')
+                            debuffed[targ.id] = debuffed[targ.id] or {}
+                            debuffed[targ.id][effect] = true
+                        end
                         break
                     end
                 end
@@ -408,6 +424,10 @@ short_commands = {
     ['p'] = 'pianissimo',
     ['n'] = 'nightingale',
     ['t'] = 'troubadour',
+    ['n'] = 'nitro',
+    ['cc'] = 'CCSV',
+    ['c'] = 'clarion',
+    ['s'] = 'soul_voice',
     ['play'] = 'playlist',
 }
 
@@ -434,7 +454,9 @@ function resolve_song(commands)
 end
 
 windower.register_event('addon command', function(...)
-    local commands = T(arg):map(windower.convert_auto_trans .. string.lower)
+    
+    -- hook for action on/off
+local commands = T(arg):map(windower.convert_auto_trans .. string.lower)
 
     commands[1] = short_commands[commands[1]] or commands[1]
     
@@ -734,6 +756,29 @@ windower.register_event('addon command', function(...)
         assert(loadstring(table.concat(commands, ' ',2)))()
     end
     bard_status:text(display_box())
+
+        -- Force Refresh command: //singer fr on|off|toggle|once
+        if cmd == 'fr' or cmd == 'forcer' or cmd == 'refresh' then
+            local arg = (args and args[1]) and tostring(args[1]):lower() or 'once'
+            if arg == 'on' then
+                _force_refresh = true and true or true
+                _force_refresh_index = 1
+                windower.add_to_chat(207, '[Singer] ForceRefresh: On (queued).')
+            elseif arg == 'off' then
+                _force_refresh = false
+                _force_refresh_index = 1
+                windower.add_to_chat(207, '[Singer] ForceRefresh: Off.')
+            elseif arg == 'toggle' then
+                _force_refresh = not _force_refresh
+                if _force_refresh then _force_refresh_index = 1 end
+                windower.add_to_chat(207, ('[Singer] ForceRefresh: %s.'):format(_force_refresh and 'On' or 'Off'))
+            else -- once
+                _force_refresh = true
+                _force_refresh_index = 1
+                windower.add_to_chat(207, '[Singer] ForceRefresh: Once queued.')
+            end
+            return
+        end
 end)
 
 function event_change()
@@ -789,3 +834,26 @@ windower.register_event('mouse', mouse_event)
 windower.register_event('unload', song_timers.reset)
 windower.register_event('status change', status_change)
 windower.register_event('zone change','job change','logout', event_change)
+
+
+-- Minimal addon command handler (append) for action on/off if not present
+windower.register_event('addon command', function(cmd, ...)
+    cmd = (cmd or ''):lower()
+    local args = {...}
+    if cmd == 'action' or cmd == 'actions' then
+        local arg = (args[0] or args[1] or ''):lower()
+        if arg == 'on' then
+            settings.actions = true
+            config.save(settings)
+            _force_refresh = true
+            _force_refresh_index = 1
+            windower.add_to_chat(207, '[Singer] Actions ON → Force refresh queued.')
+            return
+        elseif arg == 'off' then
+            settings.actions = false
+            config.save(settings)
+            windower.add_to_chat(207, '[Singer] Actions OFF')
+            return
+        end
+    end
+end)
