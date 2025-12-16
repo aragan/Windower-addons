@@ -15,6 +15,7 @@ song_buffs = {
     [207] = 'capriccio',
     [209] = 'round',
     [210] = 'gavotte',
+	[213] = 'aira',
     [214] = 'march',
     [215] = 'etude',
     [216] = 'carol',
@@ -25,14 +26,8 @@ song_buffs = {
     [222] = 'scherzo',
     }
 
-song_debuffs = {
-    [2] = 'lullaby',
-    [194] = 'elegy',
-    [217] = 'threnody',
-    [223] = 'nocturne',
-    }
-
 local equip_mods = {
+    [22249] = {9.0},            -- 'Miracle Cheer',  -- 99
     [18342] = {0.2},            -- 'Gjallarhorn',    -- 75
     [18577] = {0.2},            -- 'Gjallarhorn',    -- 80
     [18578] = {0.2},            -- 'Gjallarhorn',    -- 85
@@ -61,6 +56,9 @@ local equip_mods = {
     [21404] = {0.3},			-- 'Linos'			-- assumes +2 songs augment
     [20629] = {0.05},           -- 'Legato Dagger',
     [20599] = {0.05},           -- 'Kali',
+	[22305] = {0.2},			-- Prime Stage 3
+	[22306] = {0.2},			-- Prime Stage 4
+	[22307] = {0.3},			-- Prime Stage 5 (Final)
     [27672] = {Paeon=0.1},      -- 'Brioso Roundlet',
     [27693] = {Paeon=0.1},      -- 'Brioso Roundlet +1',
     [23049] = {Paeon=0.1},      -- 'Brioso Roundlet +2',
@@ -84,14 +82,24 @@ local equip_mods = {
     [26033] = {0.3},            -- 'Mnbw. Whistle +1',
     [26758] = {Madrigal=0.1},   -- 'Fili Calot',
     [26759] = {Madrigal=0.1},   -- 'Fili Calot +1',
+    [23094] = {Madrigal=0.1},   -- 'Fili Calot +2',
+    [23429] = {Madrigal=0.1},   -- 'Fili Calot +3',
     [26916] = {0.11,Minuet=0.1},-- 'Fili Hongreline',
     [26917] = {0.12,Minuet=0.1},-- 'Fili Hongreline +1',
+    [23161] = {0.13,Minuet=0.1},-- 'Fili Hongreline +2',
+    [23496] = {0.14,Minuet=0.1},-- 'Fili Hongreline +3',
     [27070] = {March=0.1},      -- 'Fili Manchettes',
     [27071] = {March=0.1},      -- 'Fili Manchettes +1',
+    [23228] = {March=0.1},      -- 'Fili Manchettes +2',
+    [23563] = {March=0.1},      -- 'Fili Manchettes +3',
     [27255] = {Ballad=0.1},     -- 'Fili Rhingrave',
     [27256] = {Ballad=0.1},     -- 'Fili Rhingrave +1',
+    [23295] = {Ballad=0.1},     -- 'Fili Rhingrave +2',
+    [23630] = {Ballad=0.1},     -- 'Fili Rhingrave +3',
     [27429] = {Scherzo=0.1},    -- 'Fili Cothurnes',
     [27430] = {Scherzo=0.1},    -- 'Fili Cothurnes +1',
+    [23362] = {Scherzo=0.1},    -- 'Fili Cothurnes +2',
+    [23697] = {Scherzo=0.1},    -- 'Fili Cothurnes +3',
     [26255] = {Madrigal=0.1,Prelude=0.1}, -- 'Intarabus\'s Cape',
     [25561] = {Etude=0.1},      -- 'Mousai Turban',
     [25562] = {Etude=0.2},      -- 'Mousai Turban +1',
@@ -139,11 +147,7 @@ function song_timers.duration(song_name, buffs)
             end
         end
     end
-    --[[
-    if buff_name then
-        song_multipliers[buff_name] = mult
-    end
-    ]]
+
     return song_timers.calc_dur(song_name, buffs, mult)
 end
 
@@ -152,12 +156,12 @@ function song_timers.buff_lost(targ_id,buff_id)
 
     if buff then
         local targ = windower.ffxi.get_mob_by_id(targ_id)
-        if not targ then return end
-        if not timers[targ] then return end
+        if not targ.name then return end
+        if not timers[targ.name] then return end
 
         local minimum,song
         for k,song_name in pairs(buff) do
-            local song_timer = timers[targ][song_name]
+            local song_timer = timers[targ.name][song_name]
             if song_timer and (not minimum or song_timer.ts < minimum) then
                 minimum = song_timer.ts
                 song = song_name
@@ -165,15 +169,20 @@ function song_timers.buff_lost(targ_id,buff_id)
         end
 
         if not song then return end
-        if not settings.song[targ] then song_timers.delete(song,'AoE') end
-        song_timers.delete(song,targ)
+		if settings.aoe.party then
+			local party = windower.ffxi.get_party()
+			
+			for slot in get.party_slots:it() do
+				if settings.aoe[slot] and party[slot].name == targ.name then
+					song_timers.delete(song,'AoE')
+				end
+			end
+		end
+		if targ.name == windower.ffxi.get_player().name then
+			song_timers.delete(song,'AoE')
+		end
+		song_timers.delete(song,targ.name)
         return
-    end
-
-    local debuff = song_debuffs[buff_id]
-
-    if debuff and debuffed[targ_id] then
-        debuffed[targ_id][debuff] = nil
     end
 end
 
@@ -193,14 +202,19 @@ function song_timers.update(targ)
 end
 
 function song_timers.delete(song,targ)
-    timers[targ][song] = nil
-    windower.send_command('timers delete "%s [%s]"':format(song,targ))
+	if timers[targ] and timers[targ][song] then
+		timers[targ][song] = nil
+	end
 end
 
 function song_timers.create(song,targ,dur,current_time,buffs)
     timers[targ][song] = {ts=current_time+dur,nt=buffs.troubadour,sv=buffs['soul voice']}
-    if timers.AoE[song] and targ ~= 'AoE' or not settings.timers then return end
-    windower.send_command('timers create "%s [%s]" %s down':format(song,targ,dur))
+	if not settings.aoe.party then
+		if timers['AoE'] and timers['AoE'][song] then
+			timers['AoE'][song] = {ts=current_time+dur,nt=buffs.troubadour,sv=buffs['soul voice']}
+		end
+	end
+    if timers['AoE'] and timers['AoE'][song] and targ ~= 'AoE' or not settings.timers then return end
 end
 
 function song_timers.adjust(spell_name,targ,buffs)
@@ -211,7 +225,7 @@ function song_timers.adjust(spell_name,targ,buffs)
         if timers[targ][spell_name].ts < (current_time + dur) then
             song_timers.create(spell_name,targ,dur,current_time,buffs)
         end
-    elseif table.length(timers[targ]) < get.maxsongs(targ,buffs) then
+    elseif table.length(timers[targ]) < get.maxsongs(targ,buffs) and not check_dummy(targ) then
         song_timers.create(spell_name,targ,dur,current_time,buffs)
     else
         local rep,repsong
@@ -224,18 +238,27 @@ function song_timers.adjust(spell_name,targ,buffs)
         if repsong then
             song_timers.delete(repsong,targ)
             song_timers.create(spell_name,targ,dur,current_time,buffs)
+			if not settings.aoe.party then
+				song_timers.delete(repsong,'AoE')
+				song_timers.create(spell_name,'AoE',dur,current_time,buffs)
+			end
         end
-    end
+	end
+end
+
+function check_dummy(targ)
+	local count = false
+	for k,v in pairs (timers[targ]) do
+		if setting.dummy[k] then
+			return true
+		end
+	end
+	return false
 end
 
 function song_timers.reset(bool)
-    for k,targ in pairs(timers) do
-        for i,v in pairs(targ) do
-            windower.send_command('timers delete "%s [%s]"':format(i,k))
-        end
-    end
     if bool then return end
-    timers = {AoE={},buffs={Haste={},Refresh={}}}
+    timers = {AoE={}}
     casting = false
 end
 
